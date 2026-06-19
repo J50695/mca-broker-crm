@@ -24,6 +24,30 @@ export function classifyPdfFileName(name: string): ClassifiedPdf['kind'] {
   return 'unknown'
 }
 
+export function fileIdentityKey(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`
+}
+
+/** Append newly extracted PDFs to an existing review list (deduped, preserves prior rows). */
+export function mergeClassifiedWithNewPdfs(existing: ClassifiedPdf[], newPdfs: File[]): ClassifiedPdf[] {
+  const existingKeys = new Set(existing.map((r) => fileIdentityKey(r.file)))
+  const uniqueNew = newPdfs.filter((f) => !existingKeys.has(fileIdentityKey(f)))
+  if (!uniqueNew.length) return existing
+
+  const classified = classifyPdfFiles(uniqueNew)
+  return [...existing, ...classified.review]
+}
+
+export function resolveIntakeFromReview(review: ClassifiedPdf[]): {
+  application: File | null
+  bankStatements: File[]
+} {
+  return {
+    application: review.find((r) => r.kind === 'application')?.file ?? null,
+    bankStatements: review.filter((r) => r.kind === 'bank_statement').map((r) => r.file),
+  }
+}
+
 export function classifyPdfFiles(files: File[]): {
   application: File | null
   bankStatements: File[]

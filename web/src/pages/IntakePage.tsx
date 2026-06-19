@@ -2,7 +2,11 @@ import { useRef, useState, type DragEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { createIntakeFromUploads } from '@/lib/intake'
-import { classifyPdfFiles, type ClassifiedPdf } from '@/lib/intakeClassify'
+import {
+  mergeClassifiedWithNewPdfs,
+  resolveIntakeFromReview,
+  type ClassifiedPdf,
+} from '@/lib/intakeClassify'
 import { extractPdfsFromUploads } from '@/lib/zipIntake'
 
 const ACCEPT = '.pdf,.zip,application/pdf,application/zip,application/x-zip-compressed'
@@ -20,16 +24,28 @@ export default function IntakePage() {
   const [step, setStep] = useState<string | null>(null)
 
   function syncFromReview(items: ClassifiedPdf[]) {
-    setApplication(items.find((r) => r.kind === 'application')?.file ?? null)
-    setBankStatements(items.filter((r) => r.kind === 'bank_statement').map((r) => r.file))
+    const resolved = resolveIntakeFromReview(items)
+    setApplication(resolved.application)
+    setBankStatements(resolved.bankStatements)
   }
 
   function applyClassification(pdfs: File[]) {
-    const classified = classifyPdfFiles(pdfs)
-    setReview(classified.review)
-    setApplication(classified.application)
-    setBankStatements(classified.bankStatements)
+    setReview((prev) => {
+      const merged = mergeClassifiedWithNewPdfs(prev, pdfs)
+      const resolved = resolveIntakeFromReview(merged)
+      setApplication(resolved.application)
+      setBankStatements(resolved.bankStatements)
+      return merged
+    })
     setError(null)
+  }
+
+  function clearReview() {
+    setReview([])
+    setApplication(null)
+    setBankStatements([])
+    setError(null)
+    if (inputRef.current) inputRef.current.value = ''
   }
 
   async function handleIncoming(files: FileList | null) {
@@ -102,6 +118,7 @@ export default function IntakePage() {
 
       <DropZone
         unpacking={unpacking}
+        fileCount={review.length}
         inputRef={inputRef}
         onIncoming={handleIncoming}
         onBrowse={() => inputRef.current?.click()}
@@ -109,7 +126,8 @@ export default function IntakePage() {
 
       {review.length > 0 && (
         <section className="rounded-2xl border border-office-border bg-office-surface shadow-office overflow-hidden">
-          <div className="border-b border-office-border px-5 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-office-border px-5 py-3">
+            <div>
             <h2 className="text-sm font-semibold text-ink">Review classified files</h2>
             <p className="text-xs text-ink-muted mt-0.5">
               {application ? '1 application' : '0 applications'} · {bankStatements.length} bank statement
@@ -118,6 +136,14 @@ export default function IntakePage() {
                 <span className="text-danger"> — need at least 3 statements</span>
               )}
             </p>
+            </div>
+            <button
+              type="button"
+              onClick={clearReview}
+              className="text-xs font-medium text-ink-muted hover:text-danger"
+            >
+              Clear all
+            </button>
           </div>
           <ul className="divide-y divide-office-border">
             {review.map((item, i) => (
@@ -172,11 +198,13 @@ export default function IntakePage() {
 
 function DropZone({
   unpacking,
+  fileCount,
   inputRef,
   onIncoming,
   onBrowse,
 }: {
   unpacking: boolean
+  fileCount: number
   inputRef: React.RefObject<HTMLInputElement | null>
   onIncoming: (files: FileList | null) => void
   onBrowse: () => void
@@ -212,8 +240,11 @@ function DropZone({
           dragging ? 'border-accent bg-accent-soft/40' : 'border-office-border bg-office-raised/50',
         )}
       >
-        <p className="text-sm font-medium text-ink">Drop PDFs or a ZIP here</p>
-        <p className="mt-1 text-xs text-ink-muted">We extract PDFs from ZIP archives automatically</p>
+        <p className="text-sm font-medium text-ink">Drop multiple PDFs or ZIPs here</p>
+        <p className="mt-1 text-xs text-ink-muted">
+          Select or drop as many files as you need — ZIPs unpack automatically
+          {fileCount > 0 && ` · ${fileCount} file${fileCount === 1 ? '' : 's'} in review`}
+        </p>
         <button
           type="button"
           onClick={onBrowse}
@@ -228,7 +259,10 @@ function DropZone({
           accept={ACCEPT}
           multiple
           className="hidden"
-          onChange={(e) => onIncoming(e.target.files)}
+          onChange={(e) => {
+            onIncoming(e.target.files)
+            e.target.value = ''
+          }}
         />
       </div>
     </section>
