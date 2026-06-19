@@ -73,6 +73,12 @@ export interface Merchant {
   intake_received_at: string
 }
 
+export type StatementPeriod = {
+  period_start: string | null
+  period_end: string | null
+  label: string | null
+}
+
 export interface FinancialSnapshot {
   avg_true_monthly_deposits: number | null
   dti_percent: number | null
@@ -80,6 +86,11 @@ export interface FinancialSnapshot {
   loc_detected: boolean
   avg_daily_balance: number | null
   negative_balance_days: number | null
+  latest_statement_end_date?: string | null
+  statements_current?: boolean
+  mtd_recommended?: boolean
+  statement_periods?: StatementPeriod[]
+  statement_currency_notes?: string | null
 }
 
 export interface Deal {

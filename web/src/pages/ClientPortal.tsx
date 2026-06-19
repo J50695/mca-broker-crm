@@ -131,6 +131,25 @@ export default function ClientPortal() {
         </p>
       )}
 
+      {snap?.statements_current === false && snap?.statement_currency_notes && (
+        <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
+          <p className="font-semibold">Request updated bank statements</p>
+          <p className="mt-1">{snap.statement_currency_notes}</p>
+          {snap.latest_statement_end_date && (
+            <p className="mt-2 text-xs text-warning/90">
+              Latest statement on file ends: {snap.latest_statement_end_date}
+            </p>
+          )}
+        </div>
+      )}
+
+      {snap?.statements_current !== false && snap?.mtd_recommended && snap?.statement_currency_notes && (
+        <div className="rounded-xl border border-accent/20 bg-accent-soft px-4 py-3 text-sm text-accent">
+          <p className="font-semibold">MTD recommended</p>
+          <p className="mt-1">{snap.statement_currency_notes}</p>
+        </div>
+      )}
+
       <header className="rounded-2xl border border-office-border bg-office-surface p-6 shadow-office">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -175,13 +194,31 @@ export default function ClientPortal() {
       <section className="rounded-2xl border border-office-border bg-office-surface p-6 shadow-office">
         <h2 className="text-base font-semibold text-ink mb-4">Financial snapshot</h2>
         {snap ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-4">
+            {snap.statements_current === false && (
+              <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-sm text-warning">
+                Full bank months are missing or out of date — merchant must send consecutive closed months through the prior calendar month.
+              </p>
+            )}
+            {snap.statements_current !== false && snap.mtd_recommended && (
+              <p className="rounded-lg border border-accent/20 bg-accent-soft px-3 py-2 text-sm text-accent">
+                Recommend current-month MTD for funding visibility — not required to submit.
+              </p>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Metric label="Avg true deposits" value={formatCurrency(snap.avg_true_monthly_deposits)} />
             <Metric label="DTI %" value={formatPercent(snap.dti_percent)} />
             <Metric label="Avg daily balance" value={formatCurrency(snap.avg_daily_balance)} />
             <Metric label="Negative days (latest)" value={String(snap.negative_balance_days ?? '—')} />
+            <Metric label="Latest statement" value={snap.latest_statement_end_date ?? '—'} />
+            <Metric
+              label="Statements current"
+              value={snap.statements_current === false ? 'No — request banks' : snap.statements_current ? 'Yes' : '—'}
+              warn={snap.statements_current === false}
+            />
             <Metric label="MCA detected" value={snap.mca_detected ? 'Yes' : 'No'} warn={snap.mca_detected} />
             <Metric label="LOC detected" value={snap.loc_detected ? 'Yes' : 'No'} warn={snap.loc_detected} />
+          </div>
           </div>
         ) : (
           <p className="text-sm text-ink-muted">No snapshot yet — upload 3–4 months of bank statements.</p>

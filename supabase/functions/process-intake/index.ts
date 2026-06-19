@@ -8,6 +8,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+type StatementPeriod = {
+  period_start?: string | null;
+  period_end?: string | null;
+  label?: string | null;
+  is_partial_month?: boolean;
+};
+
 type ExtractionResult = {
   merchant: {
     business_name?: string | null;
@@ -28,6 +35,8 @@ type ExtractionResult = {
     avg_daily_balance?: number | null;
     negative_balance_days?: number | null;
     statement_months_analyzed?: number;
+    statement_periods?: StatementPeriod[];
+    latest_statement_end_date?: string | null;
   };
   confidence?: number;
 };
@@ -56,7 +65,16 @@ Return ONLY valid JSON (no markdown) matching this schema:
     "loc_detected": boolean,
     "avg_daily_balance": number | null,
     "negative_balance_days": number | null,
-    "statement_months_analyzed": number
+    "statement_months_analyzed": number,
+    "statement_periods": [
+      {
+        "period_start": "YYYY-MM-DD or null",
+        "period_end": "YYYY-MM-DD or null",
+        "label": "e.g. March 2025 or null",
+        "is_partial_month": "true if month-to-date / partial month (incomplete calendar month)"
+      }
+    ],
+    "latest_statement_end_date": "YYYY-MM-DD — end date of the most recent bank statement period"
   },
   "confidence": number between 0 and 1
 }
@@ -65,7 +83,169 @@ Rules:
 - avg_true_monthly_deposits = average monthly true business deposits (exclude obvious transfers between own accounts).
 - dti_percent = estimated debt-to-income from MCA/loan debits vs deposits.
 - mca_detected / loc_detected if recurring funder debits appear on statements.
+- For EACH bank statement PDF, add one entry to statement_periods with the statement period dates read from the document header.
+- latest_statement_end_date = the end date of the newest bank statement (must be read from statements, not guessed from upload date).
+- statement_months_analyzed = count of distinct bank statement periods provided.
+- The CURRENT calendar month is usually incomplete — mark it is_partial_month: true when the statement is month-to-date (MTD), not a full closed month.
+- Submission requires consecutive full closed months through the prior calendar month (e.g. in June: March, April, May). Current-month MTD is optional but preferred after the 15th.
 - Use null when unknown.`;
+
+const MTD_RECOMMENDED_AFTER_DAY = 15;
+
+function parseIsoDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(`${value}T12:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function daysBetween(a: Date, b: Date): number {
+  return Math.round(Math.abs(a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function formatDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function monthKey(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(d: Date): string {
+  return d.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+function exampleFullMonths(today: Date, count: number): string {
+  const names: string[] = [];
+  for (let i = count; i >= 1; i--) {
+    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - i, 1));
+    names.push(monthLabel(d));
+  }
+  return names.join(", ");
+}
+
+function isPartialPeriod(period: StatementPeriod, today: Date): boolean {
+  if (period.is_partial_month === true) return true;
+  if (period.is_partial_month === false) return false;
+  const end = parseIsoDate(period.period_end);
+  if (!end) return false;
+  return monthKey(end) === monthKey(today);
+}
+
+function evaluateStatementCurrency(
+  financial: ExtractionResult["financial"],
+  uploadedStatementCount: number,
+  maxMtdLagDays: number,
+  minStatementMonths: number,
+): {
+  current: boolean;
+  mtdRecommended: boolean;
+  latestEndDate: string | null;
+  blockingNotes: string | null;
+  advisoryNotes: string | null;
+  notes: string | null;
+  periods: StatementPeriod[];
+} {
+  const periods = financial.statement_periods ?? [];
+  const today = new Date();
+  const todayMonth = monthKey(today);
+  const currentMonthName = monthLabel(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)));
+  const priorMonthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+  const priorMonthKey = monthKey(priorMonthStart);
+  const priorMonthName = monthLabel(priorMonthStart);
+  const mtdWindowOpen = today.getUTCDate() > MTD_RECOMMENDED_AFTER_DAY;
+
+  const fullPeriods = periods.filter((p) => !isPartialPeriod(p, today));
+  const fullMonthEnds = fullPeriods
+    .map((p) => parseIsoDate(p.period_end))
+    .filter((d): d is Date => d !== null)
+    .sort((a, b) => b.getTime() - a.getTime());
+
+  const allEnds = periods
+    .map((p) => parseIsoDate(p.period_end))
+    .filter((d): d is Date => d !== null)
+    .sort((a, b) => b.getTime() - a.getTime());
+
+  let latest = parseIsoDate(financial.latest_statement_end_date);
+  if (!latest && allEnds.length) latest = allEnds[0];
+
+  const blockingIssues: string[] = [];
+  const advisoryIssues: string[] = [];
+  const fullMonthCount = Math.max(fullMonthEnds.length, fullPeriods.length);
+
+  if (fullMonthCount < minStatementMonths && uploadedStatementCount < minStatementMonths) {
+    blockingIssues.push(
+      `Need at least ${minStatementMonths} full-month bank statements (e.g. ${exampleFullMonths(today, minStatementMonths)}).`,
+    );
+  } else if (fullMonthCount < minStatementMonths) {
+    blockingIssues.push(
+      `Need at least ${minStatementMonths} full-month bank statements on file — only ${fullMonthCount} closed month(s) detected.`,
+    );
+  }
+
+  if (fullMonthEnds.length === 0) {
+    blockingIssues.push(
+      `Could not read full-month statement dates — request ${exampleFullMonths(today, minStatementMonths)} from the merchant.`,
+    );
+  } else {
+    const latestFull = fullMonthEnds[0];
+    if (monthKey(latestFull) !== priorMonthKey) {
+      blockingIssues.push(
+        `Most recent full statement should be ${priorMonthName} — newest full month on file ends ${formatDate(latestFull)}.`,
+      );
+    }
+
+    if (fullMonthEnds.length >= 2) {
+      for (let i = 0; i < fullMonthEnds.length - 1; i++) {
+        const newer = fullMonthEnds[i];
+        const older = fullMonthEnds[i + 1];
+        const gap = daysBetween(newer, older);
+        if (gap > 45) {
+          blockingIssues.push(
+            `Missing statement month between ${formatDate(older)} and ${formatDate(newer)} — request the complete consecutive months from the merchant.`,
+          );
+          break;
+        }
+      }
+    }
+  }
+
+  const currentMonthMtd = periods.find((p) => {
+    const end = parseIsoDate(p.period_end);
+    return end !== null && monthKey(end) === todayMonth && isPartialPeriod(p, today);
+  });
+  const mtdEnd = currentMonthMtd ? parseIsoDate(currentMonthMtd.period_end) : null;
+
+  let mtdRecommended = false;
+  if (mtdWindowOpen) {
+    if (!mtdEnd) {
+      mtdRecommended = true;
+      advisoryIssues.push(`Recommend ${currentMonthName} month-to-date (MTD) — not required to submit.`);
+    } else {
+      const daysSinceMtd = daysBetween(today, mtdEnd);
+      if (daysSinceMtd > maxMtdLagDays) {
+        mtdRecommended = true;
+        advisoryIssues.push(
+          `${currentMonthName} MTD only runs through ${formatDate(mtdEnd)} (${daysSinceMtd} days ago) — consider requesting a fresh download (not required to submit).`,
+        );
+      }
+    }
+  }
+
+  const current = blockingIssues.length === 0;
+  const blockingNotes = blockingIssues.length ? blockingIssues.join(" ") : null;
+  const advisoryNotes = advisoryIssues.length ? advisoryIssues.join(" ") : null;
+  const notes = [blockingNotes, advisoryNotes].filter(Boolean).join(" ") || null;
+
+  return {
+    current,
+    mtdRecommended,
+    latestEndDate: latest ? formatDate(latest) : null,
+    blockingNotes,
+    advisoryNotes,
+    notes,
+    periods,
+  };
+}
 
 async function fileToBase64(supabase: ReturnType<typeof createClient>, path: string): Promise<string> {
   const { data, error } = await supabase.storage.from("deal-documents").download(path);
@@ -158,8 +338,10 @@ function evaluateQualification(
 function resolveStageAfterIntake(
   qual: { status: "qualified" | "disqualified" | "needs_review"; eligible: boolean },
   extractionOk: boolean,
+  statementsCurrent: boolean,
 ): string {
   if (!extractionOk) return "needs_stipulations";
+  if (!statementsCurrent) return "needs_stipulations";
   if (qual.status === "qualified" && qual.eligible) return "ready_to_submit";
   if (qual.status === "needs_review") return "needs_stipulations";
   if (qual.status === "disqualified") return "no_offer";
@@ -187,7 +369,7 @@ Deno.serve(async (req) => {
 
     const { data: deal, error: dealError } = await supabase
       .from("deals")
-      .select("id, merchant_id, statement_months_provided")
+      .select("id, merchant_id, statement_months_provided, notes")
       .eq("id", deal_id)
       .single();
 
@@ -210,6 +392,8 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const bankStatementCount = documents.filter((d) => d.doc_type === "bank_statement").length;
 
     let apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
@@ -248,7 +432,12 @@ Deno.serve(async (req) => {
       const fallbackName = appDoc?.file_name?.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ") ?? "New intake";
       extracted = {
         merchant: { business_name: fallbackName },
-        financial: { statement_months_analyzed: deal.statement_months_provided ?? 0, mca_detected: false, loc_detected: false },
+        financial: {
+          statement_months_analyzed: bankStatementCount || (deal.statement_months_provided ?? 0),
+          mca_detected: false,
+          loc_detected: false,
+          statement_periods: [],
+        },
         confidence: 0,
       };
       if (!apiKey) {
@@ -258,6 +447,19 @@ Deno.serve(async (req) => {
 
     const m = extracted.merchant ?? {};
     const f = extracted.financial ?? {};
+
+    const { data: rules } = await supabase
+      .from("qualification_rules")
+      .select("*")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+
+    const maxMtdLagDays = rules?.max_statement_age_days ?? 10;
+    const minStatementMonths = rules?.min_statement_months ?? 3;
+    const statementMonths = f.statement_months_analyzed ?? bankStatementCount ?? (deal.statement_months_provided ?? 0);
+
+    const currency = evaluateStatementCurrency(f, bankStatementCount, maxMtdLagDays, minStatementMonths);
 
     if (m.business_name) {
       await supabase
@@ -284,33 +486,40 @@ Deno.serve(async (req) => {
       loc_detected: f.loc_detected ?? false,
       avg_daily_balance: f.avg_daily_balance ?? null,
       negative_balance_days: f.negative_balance_days ?? null,
-      statement_months_analyzed: f.statement_months_analyzed ?? deal.statement_months_provided ?? 0,
+      statement_months_analyzed: statementMonths,
+      latest_statement_end_date: currency.latestEndDate,
+      statements_current: currency.current,
+      mtd_recommended: currency.mtdRecommended,
+      statement_periods: currency.periods,
+      statement_currency_notes: currency.notes,
       extraction_confidence: extracted.confidence ?? null,
       raw_extraction: extracted,
     });
 
-    const { data: rules } = await supabase
-      .from("qualification_rules")
-      .select("*")
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
-    const qual = rules
-      ? evaluateQualification(f, deal.statement_months_provided ?? 0, rules)
+    let qual = rules
+      ? evaluateQualification(f, statementMonths, rules)
       : { status: "needs_review" as const, eligible: false };
 
+    if (!currency.current) {
+      qual = { status: "needs_review", eligible: false };
+    }
+
     const extractionOk = !!apiKey && !extractionError;
-    const nextStage = resolveStageAfterIntake(qual, extractionOk);
+    const nextStage = resolveStageAfterIntake(qual, extractionOk, currency.current);
+
+    const stipNote = currency.blockingNotes
+      ? `[Stip — bank statements] ${currency.blockingNotes}`
+      : null;
 
     await supabase
       .from("deals")
       .update({
         requested_amount: m.requested_amount ?? undefined,
         qualification_status: extractionOk ? qual.status : "needs_review",
-        auto_submit_eligible: extractionOk ? qual.eligible : false,
-        statement_months_provided: f.statement_months_analyzed ?? deal.statement_months_provided,
+        auto_submit_eligible: extractionOk && currency.current ? qual.eligible : false,
+        statement_months_provided: statementMonths,
         stage: nextStage,
+        notes: stipNote ?? deal.notes ?? undefined,
       })
       .eq("id", deal_id);
 
@@ -322,10 +531,21 @@ Deno.serve(async (req) => {
       action_type: "intake_processed",
       note: extractionError
         ? extractionError
+        : currency.blockingNotes
+        ? `Bank statements need review: ${currency.blockingNotes}`
+        : currency.advisoryNotes
+        ? `MTD advisory: ${currency.advisoryNotes}`
         : apiKey
-        ? `Extracted lead data (confidence ${((extracted.confidence ?? 0) * 100).toFixed(0)}%)`
+        ? `Extracted lead data (confidence ${((extracted.confidence ?? 0) * 100).toFixed(0)}%) — full months current through ${currency.latestEndDate ?? "unknown"}`
         : "Documents uploaded — add ANTHROPIC_API_KEY for auto-extraction",
-      metadata: { qualification: qual.status, eligible: qual.eligible, error: extractionError },
+      metadata: {
+        qualification: qual.status,
+        eligible: qual.eligible,
+        statements_current: currency.current,
+        mtd_recommended: currency.mtdRecommended,
+        latest_statement_end_date: currency.latestEndDate,
+        error: extractionError,
+      },
     });
 
     return new Response(
@@ -333,6 +553,10 @@ Deno.serve(async (req) => {
         ok: true,
         deal_id,
         qualification: qual.status,
+        statements_current: currency.current,
+        mtd_recommended: currency.mtdRecommended,
+        statement_currency_notes: currency.notes,
+        latest_statement_end_date: currency.latestEndDate,
         extracted: !!apiKey && !extractionError,
         error: extractionError,
       }),

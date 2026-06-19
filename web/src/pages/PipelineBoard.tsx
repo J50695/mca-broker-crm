@@ -39,8 +39,15 @@ function DealCard({ deal }: { deal: Deal }) {
         <p className="mt-2 text-[10px] font-semibold text-accent">Submit now</p>
       )}
       {deal.stage === 'needs_stipulations' && (
-        <p className="mt-2 text-[10px] font-semibold text-warning">Missing stipulations</p>
+        <p className="mt-2 text-[10px] font-semibold text-warning">Needs stips</p>
       )}
+      {deal.financial_snapshots?.[0]?.statements_current === false && (
+        <p className="mt-2 text-[10px] font-semibold text-warning">Need full bank months</p>
+      )}
+      {deal.financial_snapshots?.[0]?.statements_current !== false &&
+        deal.financial_snapshots?.[0]?.mtd_recommended && (
+          <p className="mt-2 text-[10px] font-medium text-accent">MTD recommended</p>
+        )}
       {deal.auto_submitted_at && (
         <p className="mt-2 text-[10px] font-medium text-success">Submitted to lenders</p>
       )}
