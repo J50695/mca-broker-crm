@@ -5,11 +5,38 @@ import { supabase } from '@/lib/supabase'
 import { groupDealsByStage } from '@/lib/deals'
 import { PIPELINE_COLUMNS, formatCurrency, formatPercent, type Deal, type DealStage } from '@/lib/types'
 import McaDebtsIndicator from '@/components/McaDebtsIndicator'
+import MatchedLenders from '@/components/MatchedLenders'
+import { matchLenders, normalizeMcaDetails, type FunderRecord, type KnownMcaFunder } from '@/lib/lenderMatcher'
 import clsx from 'clsx'
 
-function DealCard({ deal }: { deal: Deal }) {
+function DealCard({
+  deal,
+  funders,
+  knownMca,
+}: {
+  deal: Deal
+  funders: FunderRecord[]
+  knownMca: KnownMcaFunder[]
+}) {
   const snap = deal.financial_snapshots?.[0]
   const merchant = deal.merchants
+  const normalizedSnap = snap
+    ? { ...snap, mca_details: normalizeMcaDetails(snap.mca_details, knownMca) }
+    : undefined
+  const matches =
+    normalizedSnap && funders.length
+      ? matchLenders(funders, {
+          merchant: {
+            industry: merchant?.industry,
+            monthly_revenue: merchant?.monthly_revenue,
+            time_in_business_months: merchant?.time_in_business_months,
+            fico_score: merchant?.fico_score,
+            owner_state: merchant?.owner_state,
+          },
+          financial: normalizedSnap,
+          statementMonths: deal.statement_months_provided ?? normalizedSnap.statement_months_analyzed ?? 0,
+        }, knownMca)
+      : []
 
   return (
     <Link
@@ -40,6 +67,12 @@ function DealCard({ deal }: { deal: Deal }) {
           )}
         </div>
       )}
+      {deal.stage === 'ready_to_submit' && matches.length > 0 && (
+        <div className="mt-2.5 border-t border-office-border pt-2">
+          <p className="text-[10px] font-medium text-ink-muted mb-1">Matched lenders</p>
+          <MatchedLenders matches={matches} compact limit={5} />
+        </div>
+      )}
       {deal.stage === 'ready_to_submit' && !deal.auto_submitted_at && (
         <p className="mt-2 text-[10px] font-semibold text-accent">Submit now</p>
       )}
@@ -62,18 +95,27 @@ function DealCard({ deal }: { deal: Deal }) {
 
 export default function PipelineBoard() {
   const [deals, setDeals] = useState<Deal[]>([])
+  const [funders, setFunders] = useState<FunderRecord[]>([])
+  const [knownMca, setKnownMca] = useState<KnownMcaFunder[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetchDeals = useCallback(async () => {
-    const { data, error: fetchError } = await supabase
-      .from('deals')
-      .select(`
+    const [{ data, error: fetchError }, { data: funderData }, { data: knownData }] = await Promise.all([
+      supabase
+        .from('deals')
+        .select(`
         *,
         merchants (*),
         financial_snapshots (*)
       `)
-      .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('funders')
+        .select('id, slug, name, min_fico, min_monthly_revenue, min_time_in_business_months, excluded_industries, max_advance, is_active, guidelines')
+        .eq('is_active', true),
+      supabase.from('known_mca_funders').select('name, match_patterns').eq('is_active', true),
+    ])
 
     if (fetchError) {
       setError(fetchError.message)
@@ -82,6 +124,8 @@ export default function PipelineBoard() {
     }
 
     setDeals((data as Deal[]) ?? [])
+    setFunders((funderData as FunderRecord[]) ?? [])
+    setKnownMca((knownData as KnownMcaFunder[]) ?? [])
     setLoading(false)
   }, [])
 
@@ -188,7 +232,7 @@ export default function PipelineBoard() {
                             {...dragProvided.draggableProps}
                             {...dragProvided.dragHandleProps}
                           >
-                            <DealCard deal={deal} />
+                            <DealCard deal={deal} funders={funders} knownMca={knownMca} />
                           </div>
                         )}
                       </Draggable>

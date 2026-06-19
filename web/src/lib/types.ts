@@ -70,6 +70,11 @@ export interface Merchant {
   owner_full_name: string | null
   phone: string | null
   email: string | null
+  industry: string | null
+  monthly_revenue: number | null
+  time_in_business_months: number | null
+  fico_score: number | null
+  owner_state: string | null
   intake_received_at: string
 }
 
@@ -103,6 +108,7 @@ export interface FinancialSnapshot {
   mtd_recommended?: boolean
   statement_periods?: StatementPeriod[]
   statement_currency_notes?: string | null
+  statement_months_analyzed?: number
 }
 
 export interface Deal {

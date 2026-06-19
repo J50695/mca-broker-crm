@@ -4,6 +4,14 @@ import { supabase } from '@/lib/supabase'
 import { contactEmail, contactPhone } from '@/lib/deals'
 import StatusBadge from '@/components/StatusBadge'
 import McaDebtsIndicator from '@/components/McaDebtsIndicator'
+import MatchedLenders from '@/components/MatchedLenders'
+import {
+  matchLenders,
+  normalizeMcaDetails,
+  type FunderRecord,
+  type KnownMcaFunder,
+  type LenderMatchResult,
+} from '@/lib/lenderMatcher'
 import { formatCurrency, formatPercent, PIPELINE_COLUMNS, type Deal, type DocumentStatus } from '@/lib/types'
 
 type DocRow = { id: string; file_name: string | null; doc_type: string; status: DocumentStatus }
@@ -16,11 +24,13 @@ export default function ClientPortal() {
   const [loading, setLoading] = useState(true)
   const [retrying, setRetrying] = useState(false)
   const [retryError, setRetryError] = useState<string | null>(null)
+  const [lenderMatches, setLenderMatches] = useState<LenderMatchResult[]>([])
 
   const load = useCallback(async () => {
     if (!dealId) return
 
-    const [{ data: dealData }, { data: subData }, { data: docData }] = await Promise.all([
+    const [{ data: dealData }, { data: subData }, { data: docData }, { data: funderData }, { data: knownMca }] =
+      await Promise.all([
       supabase
         .from('deals')
         .select(`*, merchants (*), financial_snapshots (*)`)
@@ -36,6 +46,12 @@ export default function ClientPortal() {
         .select('id, file_name, doc_type, status')
         .eq('deal_id', dealId)
         .order('created_at'),
+      supabase
+        .from('funders')
+        .select('id, slug, name, min_fico, min_monthly_revenue, min_time_in_business_months, excluded_industries, max_advance, is_active, guidelines')
+        .eq('is_active', true)
+        .order('name'),
+      supabase.from('known_mca_funders').select('name, match_patterns').eq('is_active', true),
     ])
 
     const dealRow = dealData as Deal | null
@@ -50,6 +66,32 @@ export default function ClientPortal() {
     setDeal(dealRow)
     setSubmissions(subData ?? [])
     setDocuments((docData as DocRow[]) ?? [])
+
+    const snap = dealRow?.financial_snapshots?.[0]
+    const merchant = dealRow?.merchants
+    if (snap && funderData?.length) {
+      const known = (knownMca ?? []) as KnownMcaFunder[]
+      const normalizedSnap = {
+        ...snap,
+        mca_details: normalizeMcaDetails(snap.mca_details, known),
+      }
+      setLenderMatches(
+        matchLenders(funderData as FunderRecord[], {
+          merchant: {
+            industry: merchant?.industry,
+            monthly_revenue: merchant?.monthly_revenue,
+            time_in_business_months: merchant?.time_in_business_months,
+            fico_score: merchant?.fico_score,
+            owner_state: merchant?.owner_state,
+          },
+          financial: normalizedSnap,
+          statementMonths: dealRow?.statement_months_provided ?? snap.statement_months_analyzed ?? 0,
+        }, known),
+      )
+    } else {
+      setLenderMatches([])
+    }
+
     setLoading(false)
   }, [dealId])
 
@@ -192,6 +234,23 @@ export default function ClientPortal() {
         </section>
       )}
 
+      {(snap?.mca_detected || (snap?.mca_details?.length ?? 0) > 0) && (
+        <section className="rounded-2xl border border-office-border bg-office-surface p-6 shadow-office">
+          <h2 className="text-base font-semibold text-ink mb-4">Active MCAs</h2>
+          <McaDebtsIndicator mca_detected={snap!.mca_detected} mca_details={snap!.mca_details} />
+        </section>
+      )}
+
+      {snap && lenderMatches.length > 0 && (
+        <section className="rounded-2xl border border-office-border bg-office-surface p-6 shadow-office">
+          <h2 className="text-base font-semibold text-ink mb-1">Matched lenders</h2>
+          <p className="text-xs text-ink-muted mb-4">
+            Ranked by fit using financial snapshot, merchant profile, and active MCA positions.
+          </p>
+          <MatchedLenders matches={lenderMatches} />
+        </section>
+      )}
+
       <section className="rounded-2xl border border-office-border bg-office-surface p-6 shadow-office">
         <h2 className="text-base font-semibold text-ink mb-4">Financial snapshot</h2>
         {snap ? (
@@ -217,10 +276,9 @@ export default function ClientPortal() {
               value={snap.statements_current === false ? 'No — request banks' : snap.statements_current ? 'Yes' : '—'}
               warn={snap.statements_current === false}
             />
-            <McaDebtsIndicator
-              mca_detected={snap.mca_detected}
-              mca_details={snap.mca_details}
-            />
+            {!(snap.mca_detected || (snap.mca_details?.length ?? 0) > 0) && (
+              <Metric label="Active MCAs" value="None detected" />
+            )}
             <Metric label="LOC detected" value={snap.loc_detected ? 'Yes' : 'No'} warn={snap.loc_detected} />
           </div>
           </div>

@@ -106,7 +106,7 @@ Rules:
 - avg_true_monthly_deposits = average monthly true business deposits (exclude obvious transfers between own accounts).
 - dti_percent = estimated debt-to-income from MCA/loan debits vs deposits. Use ONLY MCA/funder debits with transaction dates in the last 2 calendar months (relative to latest_statement_end_date, or today if unknown) — ignore older paid-off or inactive MCA positions.
 - mca_detected = true only if at least one MCA/funder position has a recurring debit with last_activity_date in the last 2 calendar months (see MCA recency rules below). False if all MCA activity is older than that window.
-- mca_details = one entry per distinct ACTIVE MCA/funder position with debits in the last 2 calendar months. Include funder name from the statement, debit_amount per occurrence, frequency, monthly_estimate, and last_activity_date (most recent debit date). Do NOT include historical MCAs that stopped debiting more than 2 calendar months before latest_statement_end_date. Empty array if none are active in that window.
+- mca_details = one entry per distinct ACTIVE MCA/funder position with debits in the last 2 calendar months. Include funder name from the statement (use the lender's common name when recognizable, e.g. "Forward Financing" not just "FORWARD FIN"), debit_amount per occurrence, frequency, monthly_estimate, and last_activity_date (most recent debit date). Do NOT include historical MCAs that stopped debiting more than 2 calendar months before latest_statement_end_date. Empty array if none are active in that window.
 - MCA recency: anchor to latest_statement_end_date (or today). Include a position only if its last_activity_date falls in the reference month or the prior calendar month (2 calendar months total). Example: if latest statement ends 2026-05-31, include debits from April 2026 and May 2026 only; exclude March 2026 and earlier.
 - loc_detected if recurring line-of-credit debits appear on statements.
 - For EACH bank statement PDF, add one entry to statement_periods with the statement period dates read from the document header.
@@ -336,6 +336,35 @@ function mcaRecencyWindowStart(referenceDate: Date): Date {
   );
 }
 
+function normalizeFunderName(raw: string, known: { name: string; match_patterns: string[] }[]): string {
+  const upper = raw.toUpperCase().replace(/\s+/g, " ").trim();
+  for (const entry of known) {
+    for (const pattern of entry.match_patterns) {
+      if (upper.includes(pattern.toUpperCase())) return entry.name;
+    }
+  }
+  return raw.trim();
+}
+
+function normalizeMcaDetails(
+  details: McaDetail[],
+  known: { name: string; match_patterns: string[] }[],
+): McaDetail[] {
+  return details.map((d) => {
+    const raw = d.funder_name!.trim();
+    const normalized = normalizeFunderName(raw, known);
+    const notes =
+      normalized !== raw
+        ? [d.notes?.trim(), `ACH: ${raw}`].filter(Boolean).join(" · ")
+        : d.notes?.trim() || null;
+    return {
+      ...d,
+      funder_name: normalized,
+      notes,
+    };
+  });
+}
+
 function filterRecentMcaDetails(
   details: McaDetail[] | null | undefined,
   referenceDate: Date,
@@ -528,7 +557,17 @@ Deno.serve(async (req) => {
     const currency = evaluateStatementCurrency(f, bankStatementCount, maxMtdLagDays, minStatementMonths);
 
     const mcaReference = parseIsoDate(currency.latestEndDate) ?? parseIsoDate(f.latest_statement_end_date) ?? new Date();
-    const mca = filterRecentMcaDetails(f.mca_details, mcaReference);
+    const mcaFiltered = filterRecentMcaDetails(f.mca_details, mcaReference);
+
+    const { data: knownMcaFunders } = await supabase
+      .from("known_mca_funders")
+      .select("name, match_patterns")
+      .eq("is_active", true);
+
+    const mca = {
+      ...mcaFiltered,
+      mca_details: normalizeMcaDetails(mcaFiltered.mca_details, knownMcaFunders ?? []),
+    };
 
     if (m.business_name) {
       await supabase

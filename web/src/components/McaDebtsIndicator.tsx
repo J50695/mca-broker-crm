@@ -1,4 +1,4 @@
-import { formatMcaDetailSummary, type McaDetail } from '@/lib/types'
+import { formatCurrency, formatMcaDetailSummary, type McaDetail } from '@/lib/types'
 
 type Props = {
   mca_detected: boolean
@@ -36,19 +36,29 @@ export default function McaDebtsIndicator({ mca_detected, mca_details, compact }
 
   if (details.length === 0) {
     return (
-      <div className="rounded-xl border border-warning/30 bg-warning-soft p-3.5">
-        <p className="text-xs text-ink-muted">MCA detected · Last 2 months</p>
-        <p className="text-warning font-semibold mt-1">Yes — funder details not extracted</p>
+      <div className="rounded-xl border border-warning/30 bg-warning-soft p-3.5 sm:col-span-2 lg:col-span-3">
+        <p className="text-xs font-medium text-ink-muted">Active MCAs</p>
+        <p className="text-warning font-semibold mt-1">MCA detected — funder names not extracted</p>
+        <p className="text-[11px] text-ink-muted mt-1">Last 2 calendar months</p>
       </div>
     )
   }
 
+  const totalMonthly = details.reduce((sum, d) => sum + (d.monthly_estimate ?? 0), 0)
+
   return (
     <div className="rounded-xl border border-warning/30 bg-warning-soft p-3.5 sm:col-span-2 lg:col-span-3">
-      <p className="text-xs font-medium text-ink-muted mb-2">
-        MCA positions detected
-        <span className="font-normal text-ink-muted/80"> · Last 2 months</span>
-      </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+        <p className="text-xs font-medium text-ink-muted">
+          Active MCAs
+          <span className="font-normal text-ink-muted/80"> · Last 2 months</span>
+        </p>
+        {totalMonthly > 0 && (
+          <p className="text-xs font-semibold text-warning">
+            ~{formatCurrency(totalMonthly)}/mo total debits
+          </p>
+        )}
+      </div>
       <ul className="space-y-1.5">
         {details.map((detail, index) => (
           <li
