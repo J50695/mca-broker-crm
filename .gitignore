@@ -7,3 +7,6 @@ dist/
 .DS_Store
 *.log
 .supabase/
+
+# Local Netlify folder
+.netlify
