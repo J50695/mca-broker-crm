@@ -33,16 +33,33 @@ Storage policies are created in migration 2 — they apply once the bucket exist
 ## 4. Enable Auth email (for login)
 
 1. **Authentication** → **Providers** → **Email** → enabled (default)
-2. For dev you can turn off **Confirm email** under Email settings so signup works instantly.
+2. **Authentication** → **Sign In / Providers** → turn **off** “Allow new users to sign up” (recommended — CRM is invite-only)
+3. Public self-signup is also blocked in the database; new agents are created by an admin or via the `provision-agent` edge function.
 
-## 5. Create your admin user
+## 5. Create agents (invite-only)
 
-**Authentication** → **Users** → **Add user** → **Create new user**
+Accounts are **not** self-serve on the login page. To add someone:
 
-- Email + password (your login)
-- The `auth_agent_trigger` migration auto-creates an `agents` row with role **admin**.
+**Option A — Cursor chat (recommended)**  
+Paste in chat:
 
-Or sign up from the CRM login page after step 6.
+```text
+New agent:
+Name: Jane Owner
+Email: jane@company.com
+Role: admin
+```
+
+An admin can optionally include `Password: ...` (min 8 chars); otherwise a temporary password is generated.
+
+**Option B — Supabase Dashboard**  
+**Authentication** → **Users** → **Add user** → set email/password, then in SQL Editor:
+
+```sql
+UPDATE agents SET role = 'admin' WHERE email = 'jane@company.com';
+```
+
+The `auth_agent_trigger` migration auto-creates the `agents` row when the user is created with admin provisioning metadata.
 
 ## 6. Connect the React app
 

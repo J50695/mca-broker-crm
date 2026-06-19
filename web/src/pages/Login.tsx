@@ -6,19 +6,14 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
-    const result =
-      mode === 'signin'
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password })
-
-    if (result.error) setError(result.error.message)
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    if (signInError) setError(signInError.message)
     setLoading(false)
   }
 
@@ -69,19 +64,12 @@ export default function Login() {
             disabled={loading}
             className="w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hover disabled:opacity-60"
           >
-            {loading ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+            {loading ? 'Please wait…' : 'Sign in'}
           </button>
         </form>
 
         <p className="mt-6 text-center text-sm text-ink-muted">
-          {mode === 'signin' ? 'First time here?' : 'Already have an account?'}{' '}
-          <button
-            type="button"
-            onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-            className="font-medium text-accent hover:underline"
-          >
-            {mode === 'signin' ? 'Create account' : 'Sign in'}
-          </button>
+          Need access? Ask your admin — accounts are invite-only.
         </p>
       </div>
     </div>
