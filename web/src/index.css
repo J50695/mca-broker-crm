@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-office-bg: #f0f2f5;
+  --color-office-surface: #ffffff;
+  --color-office-raised: #f7f8fa;
+  --color-office-border: #e4e7ec;
+  --color-office-border-strong: #d0d5dd;
+
+  --color-ink: #101828;
+  --color-ink-secondary: #475467;
+  --color-ink-muted: #98a2b3;
+
+  --color-accent: #2e5aac;
+  --color-accent-hover: #244a94;
+  --color-accent-soft: #eef4ff;
+
+  --color-success: #027a48;
+  --color-success-soft: #ecfdf3;
+  --color-warning: #b54708;
+  --color-warning-soft: #fffaeb;
+  --color-danger: #b42318;
+  --color-danger-soft: #fef3f2;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--color-office-bg);
+    color: var(--color-ink);
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  .shadow-office {
+    box-shadow:
+      0 1px 2px rgba(16, 24, 40, 0.04),
+      0 1px 3px rgba(16, 24, 40, 0.06);
+  }
+
+  .shadow-office-md {
+    box-shadow:
+      0 2px 4px rgba(16, 24, 40, 0.04),
+      0 4px 12px rgba(16, 24, 40, 0.06);
+  }
+}
