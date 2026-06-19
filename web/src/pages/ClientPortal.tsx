@@ -12,7 +12,14 @@ import {
   type KnownMcaFunder,
   type LenderMatchResult,
 } from '@/lib/lenderMatcher'
-import { formatCurrency, formatPercent, PIPELINE_COLUMNS, type Deal, type DocumentStatus } from '@/lib/types'
+import {
+  formatActiveMcaLabel,
+  formatCurrency,
+  formatPercent,
+  PIPELINE_COLUMNS,
+  type Deal,
+  type DocumentStatus,
+} from '@/lib/types'
 
 type DocRow = { id: string; file_name: string | null; doc_type: string; status: DocumentStatus }
 
@@ -55,12 +62,18 @@ export default function ClientPortal() {
     ])
 
     const dealRow = dealData as Deal | null
+    const known = (knownMca ?? []) as KnownMcaFunder[]
     if (dealRow?.financial_snapshots?.length) {
       dealRow.financial_snapshots.sort(
         (a, b) =>
           new Date((b as { created_at?: string }).created_at ?? 0).getTime() -
           new Date((a as { created_at?: string }).created_at ?? 0).getTime(),
       )
+      const latest = dealRow.financial_snapshots[0]
+      dealRow.financial_snapshots[0] = {
+        ...latest,
+        mca_details: normalizeMcaDetails(latest.mca_details, known),
+      }
     }
 
     setDeal(dealRow)
@@ -70,11 +83,6 @@ export default function ClientPortal() {
     const snap = dealRow?.financial_snapshots?.[0]
     const merchant = dealRow?.merchants
     if (snap && funderData?.length) {
-      const known = (knownMca ?? []) as KnownMcaFunder[]
-      const normalizedSnap = {
-        ...snap,
-        mca_details: normalizeMcaDetails(snap.mca_details, known),
-      }
       setLenderMatches(
         matchLenders(funderData as FunderRecord[], {
           merchant: {
@@ -84,7 +92,7 @@ export default function ClientPortal() {
             fico_score: merchant?.fico_score,
             owner_state: merchant?.owner_state,
           },
-          financial: normalizedSnap,
+          financial: snap,
           statementMonths: dealRow?.statement_months_provided ?? snap.statement_months_analyzed ?? 0,
         }, known),
       )
@@ -276,9 +284,11 @@ export default function ClientPortal() {
               value={snap.statements_current === false ? 'No — request banks' : snap.statements_current ? 'Yes' : '—'}
               warn={snap.statements_current === false}
             />
-            {!(snap.mca_detected || (snap.mca_details?.length ?? 0) > 0) && (
-              <Metric label="Active MCAs" value="None detected" />
-            )}
+            <Metric
+              label="Active MCAs"
+              value={formatActiveMcaLabel(snap.mca_detected, snap.mca_details)}
+              warn={snap.mca_detected || (snap.mca_details?.length ?? 0) > 0}
+            />
             <Metric label="LOC detected" value={snap.loc_detected ? 'Yes' : 'No'} warn={snap.loc_detected} />
           </div>
           </div>

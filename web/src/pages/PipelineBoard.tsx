@@ -59,7 +59,7 @@ function DealCard({
             <McaDebtsIndicator
               compact
               mca_detected={snap.mca_detected}
-              mca_details={snap.mca_details}
+              mca_details={normalizedSnap?.mca_details ?? snap.mca_details}
             />
           )}
           {snap.loc_detected && (

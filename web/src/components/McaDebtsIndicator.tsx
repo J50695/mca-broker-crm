@@ -13,8 +13,11 @@ export default function McaDebtsIndicator({ mca_detected, mca_details, compact }
   if (compact) {
     if (details.length === 0) {
       return (
-        <span className="rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-medium text-warning">
-          MCA
+        <span
+          className="rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-medium text-warning"
+          title="MCA detected (funder unknown) · Last 2 months"
+        >
+          MCA (funder unknown)
         </span>
       )
     }
@@ -38,8 +41,8 @@ export default function McaDebtsIndicator({ mca_detected, mca_details, compact }
     return (
       <div className="rounded-xl border border-warning/30 bg-warning-soft p-3.5 sm:col-span-2 lg:col-span-3">
         <p className="text-xs font-medium text-ink-muted">Active MCAs</p>
-        <p className="text-warning font-semibold mt-1">MCA detected — funder names not extracted</p>
-        <p className="text-[11px] text-ink-muted mt-1">Last 2 calendar months</p>
+        <p className="text-warning font-semibold mt-1">MCA detected (funder unknown)</p>
+        <p className="text-[11px] text-ink-muted mt-1">Last 2 months</p>
       </div>
     )
   }

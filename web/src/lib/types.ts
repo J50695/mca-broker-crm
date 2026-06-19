@@ -155,3 +155,22 @@ export function formatMcaDetailSummary(detail: McaDetail): string {
   }
   return parts.join(' · ')
 }
+
+export function activeMcaFunderNames(details?: McaDetail[] | null): string[] {
+  return (details ?? [])
+    .map((d) => d.funder_name?.trim())
+    .filter((n): n is string => Boolean(n))
+}
+
+/** Human-readable list of active MCA funders for metrics and labels. */
+export function formatActiveMcaLabel(
+  mca_detected: boolean,
+  details?: McaDetail[] | null,
+): string {
+  const names = activeMcaFunderNames(details)
+  if (names.length === 0) {
+    return mca_detected ? 'MCA detected (funder unknown)' : 'None detected'
+  }
+  if (names.length <= 4) return names.join(', ')
+  return `${names.slice(0, 4).join(', ')} +${names.length - 4} more`
+}
