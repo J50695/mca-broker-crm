@@ -15,6 +15,18 @@ type StatementPeriod = {
   is_partial_month?: boolean;
 };
 
+type McaDetail = {
+  funder_name?: string | null;
+  debit_amount?: number | null;
+  frequency?: "daily" | "weekly" | "monthly" | null;
+  monthly_estimate?: number | null;
+  last_activity_date?: string | null;
+  notes?: string | null;
+};
+
+/** MCA positions must show debits within this many calendar months (inclusive of reference month). */
+const MCA_RECENCY_CALENDAR_MONTHS = 2;
+
 type ExtractionResult = {
   merchant: {
     business_name?: string | null;
@@ -31,6 +43,7 @@ type ExtractionResult = {
     avg_true_monthly_deposits?: number | null;
     dti_percent?: number | null;
     mca_detected?: boolean;
+    mca_details?: McaDetail[];
     loc_detected?: boolean;
     avg_daily_balance?: number | null;
     negative_balance_days?: number | null;
@@ -62,6 +75,16 @@ Return ONLY valid JSON (no markdown) matching this schema:
     "avg_true_monthly_deposits": number | null,
     "dti_percent": number | null,
     "mca_detected": boolean,
+    "mca_details": [
+      {
+        "funder_name": "string — name as it appears on the bank statement",
+        "debit_amount": number | null,
+        "frequency": "daily" | "weekly" | "monthly" | null,
+        "monthly_estimate": number | null,
+        "last_activity_date": "YYYY-MM-DD — date of the most recent MCA/funder debit on statements",
+        "notes": "optional broker note, e.g. ACH descriptor"
+      }
+    ],
     "loc_detected": boolean,
     "avg_daily_balance": number | null,
     "negative_balance_days": number | null,
@@ -81,8 +104,11 @@ Return ONLY valid JSON (no markdown) matching this schema:
 
 Rules:
 - avg_true_monthly_deposits = average monthly true business deposits (exclude obvious transfers between own accounts).
-- dti_percent = estimated debt-to-income from MCA/loan debits vs deposits.
-- mca_detected / loc_detected if recurring funder debits appear on statements.
+- dti_percent = estimated debt-to-income from MCA/loan debits vs deposits. Use ONLY MCA/funder debits with transaction dates in the last 2 calendar months (relative to latest_statement_end_date, or today if unknown) — ignore older paid-off or inactive MCA positions.
+- mca_detected = true only if at least one MCA/funder position has a recurring debit with last_activity_date in the last 2 calendar months (see MCA recency rules below). False if all MCA activity is older than that window.
+- mca_details = one entry per distinct ACTIVE MCA/funder position with debits in the last 2 calendar months. Include funder name from the statement, debit_amount per occurrence, frequency, monthly_estimate, and last_activity_date (most recent debit date). Do NOT include historical MCAs that stopped debiting more than 2 calendar months before latest_statement_end_date. Empty array if none are active in that window.
+- MCA recency: anchor to latest_statement_end_date (or today). Include a position only if its last_activity_date falls in the reference month or the prior calendar month (2 calendar months total). Example: if latest statement ends 2026-05-31, include debits from April 2026 and May 2026 only; exclude March 2026 and earlier.
+- loc_detected if recurring line-of-credit debits appear on statements.
 - For EACH bank statement PDF, add one entry to statement_periods with the statement period dates read from the document header.
 - latest_statement_end_date = the end date of the newest bank statement (must be read from statements, not guessed from upload date).
 - statement_months_analyzed = count of distinct bank statement periods provided.
@@ -299,6 +325,45 @@ async function extractWithClaude(
   return JSON.parse(jsonMatch[0]) as ExtractionResult;
 }
 
+/** First day of the earliest calendar month in the 2-month MCA window ending at referenceDate. */
+function mcaRecencyWindowStart(referenceDate: Date): Date {
+  return new Date(
+    Date.UTC(
+      referenceDate.getUTCFullYear(),
+      referenceDate.getUTCMonth() - (MCA_RECENCY_CALENDAR_MONTHS - 1),
+      1,
+    ),
+  );
+}
+
+function filterRecentMcaDetails(
+  details: McaDetail[] | null | undefined,
+  referenceDate: Date,
+): { mca_detected: boolean; mca_details: McaDetail[] } {
+  const windowStart = mcaRecencyWindowStart(referenceDate);
+
+  const mca_details = (details ?? [])
+    .filter((d) => {
+      if (!d.funder_name?.trim()) return false;
+      const last = parseIsoDate(d.last_activity_date);
+      if (!last) return false;
+      return last >= windowStart;
+    })
+    .map((d) => ({
+      funder_name: d.funder_name!.trim(),
+      debit_amount: d.debit_amount ?? null,
+      frequency: d.frequency ?? null,
+      monthly_estimate: d.monthly_estimate ?? null,
+      last_activity_date: d.last_activity_date ?? null,
+      notes: d.notes?.trim() || null,
+    }));
+
+  return {
+    mca_detected: mca_details.length > 0,
+    mca_details,
+  };
+}
+
 function evaluateQualification(
   financial: ExtractionResult["financial"],
   statementMonths: number,
@@ -435,6 +500,7 @@ Deno.serve(async (req) => {
         financial: {
           statement_months_analyzed: bankStatementCount || (deal.statement_months_provided ?? 0),
           mca_detected: false,
+          mca_details: [],
           loc_detected: false,
           statement_periods: [],
         },
@@ -461,6 +527,9 @@ Deno.serve(async (req) => {
 
     const currency = evaluateStatementCurrency(f, bankStatementCount, maxMtdLagDays, minStatementMonths);
 
+    const mcaReference = parseIsoDate(currency.latestEndDate) ?? parseIsoDate(f.latest_statement_end_date) ?? new Date();
+    const mca = filterRecentMcaDetails(f.mca_details, mcaReference);
+
     if (m.business_name) {
       await supabase
         .from("merchants")
@@ -482,7 +551,8 @@ Deno.serve(async (req) => {
       deal_id: deal.id,
       avg_true_monthly_deposits: f.avg_true_monthly_deposits ?? null,
       dti_percent: f.dti_percent ?? null,
-      mca_detected: f.mca_detected ?? false,
+      mca_detected: mca.mca_detected,
+      mca_details: mca.mca_details,
       loc_detected: f.loc_detected ?? false,
       avg_daily_balance: f.avg_daily_balance ?? null,
       negative_balance_days: f.negative_balance_days ?? null,

@@ -79,10 +79,22 @@ export type StatementPeriod = {
   label: string | null
 }
 
+export type McaFrequency = 'daily' | 'weekly' | 'monthly'
+
+export interface McaDetail {
+  funder_name: string
+  debit_amount?: number | null
+  frequency?: McaFrequency | null
+  monthly_estimate?: number | null
+  last_activity_date?: string | null
+  notes?: string | null
+}
+
 export interface FinancialSnapshot {
   avg_true_monthly_deposits: number | null
   dti_percent: number | null
   mca_detected: boolean
+  mca_details?: McaDetail[]
   loc_detected: boolean
   avg_daily_balance: number | null
   negative_balance_days: number | null
@@ -118,4 +130,22 @@ export function formatCurrency(value: number | null | undefined): string {
 export function formatPercent(value: number | null | undefined): string {
   if (value == null) return '—'
   return `${value.toFixed(1)}%`
+}
+
+const MCA_FREQUENCY_LABEL: Record<McaFrequency, string> = {
+  daily: 'day',
+  weekly: 'wk',
+  monthly: 'mo',
+}
+
+export function formatMcaDetailSummary(detail: McaDetail): string {
+  const parts: string[] = [detail.funder_name]
+  if (detail.debit_amount != null && detail.frequency) {
+    parts.push(`${formatCurrency(detail.debit_amount)}/${MCA_FREQUENCY_LABEL[detail.frequency]}`)
+  } else if (detail.debit_amount != null) {
+    parts.push(formatCurrency(detail.debit_amount))
+  } else if (detail.monthly_estimate != null) {
+    parts.push(`~${formatCurrency(detail.monthly_estimate)}/mo`)
+  }
+  return parts.join(' · ')
 }

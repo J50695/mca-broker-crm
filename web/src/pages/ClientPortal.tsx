@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { contactEmail, contactPhone } from '@/lib/deals'
 import StatusBadge from '@/components/StatusBadge'
+import McaDebtsIndicator from '@/components/McaDebtsIndicator'
 import { formatCurrency, formatPercent, PIPELINE_COLUMNS, type Deal, type DocumentStatus } from '@/lib/types'
 
 type DocRow = { id: string; file_name: string | null; doc_type: string; status: DocumentStatus }
@@ -216,7 +217,10 @@ export default function ClientPortal() {
               value={snap.statements_current === false ? 'No — request banks' : snap.statements_current ? 'Yes' : '—'}
               warn={snap.statements_current === false}
             />
-            <Metric label="MCA detected" value={snap.mca_detected ? 'Yes' : 'No'} warn={snap.mca_detected} />
+            <McaDebtsIndicator
+              mca_detected={snap.mca_detected}
+              mca_details={snap.mca_details}
+            />
             <Metric label="LOC detected" value={snap.loc_detected ? 'Yes' : 'No'} warn={snap.loc_detected} />
           </div>
           </div>

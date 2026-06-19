@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { groupDealsByStage } from '@/lib/deals'
 import { PIPELINE_COLUMNS, formatCurrency, formatPercent, type Deal, type DealStage } from '@/lib/types'
+import McaDebtsIndicator from '@/components/McaDebtsIndicator'
 import clsx from 'clsx'
 
 function DealCard({ deal }: { deal: Deal }) {
@@ -28,7 +29,11 @@ function DealCard({ deal }: { deal: Deal }) {
       {(snap?.mca_detected || snap?.loc_detected) && (
         <div className="mt-2.5 flex gap-1 flex-wrap">
           {snap.mca_detected && (
-            <span className="rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-medium text-warning">MCA</span>
+            <McaDebtsIndicator
+              compact
+              mca_detected={snap.mca_detected}
+              mca_details={snap.mca_details}
+            />
           )}
           {snap.loc_detected && (
             <span className="rounded-md bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent">LOC</span>
