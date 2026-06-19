@@ -1,5 +1,8 @@
+import type { ExtractedPdf } from '@/lib/zipIntake'
+
 export type ClassifiedPdf = {
   file: File
+  sourcePath: string
   kind: 'application' | 'bank_statement' | 'unknown'
 }
 
@@ -28,24 +31,30 @@ export function fileIdentityKey(file: File): string {
   return `${file.name}:${file.size}:${file.lastModified}`
 }
 
+export function classifyExtractedPdfs(extracted: ExtractedPdf[]): ClassifiedPdf[] {
+  return extracted.map(({ file, sourcePath }) => ({
+    file,
+    sourcePath,
+    kind: classifyPdfFileName(file.name),
+  }))
+}
+
 /** Append newly extracted PDFs to an existing review list (deduped, preserves prior rows). */
-export function mergeClassifiedWithNewPdfs(existing: ClassifiedPdf[], newPdfs: File[]): ClassifiedPdf[] {
+export function mergeClassifiedWithNewPdfs(existing: ClassifiedPdf[], newPdfs: ExtractedPdf[]): ClassifiedPdf[] {
   const existingKeys = new Set(existing.map((r) => fileIdentityKey(r.file)))
-  const uniqueNew = newPdfs.filter((f) => !existingKeys.has(fileIdentityKey(f)))
+  const uniqueNew = newPdfs.filter((f) => !existingKeys.has(fileIdentityKey(f.file)))
   if (!uniqueNew.length) return existing
 
-  const classified = classifyPdfFiles(uniqueNew)
-  return [...existing, ...classified.review]
+  return [...existing, ...classifyExtractedPdfs(uniqueNew)]
 }
 
 export function resolveIntakeFromReview(review: ClassifiedPdf[]): {
   application: File | null
   bankStatements: File[]
 } {
-  return {
-    application: review.find((r) => r.kind === 'application')?.file ?? null,
-    bankStatements: review.filter((r) => r.kind === 'bank_statement').map((r) => r.file),
-  }
+  const application = review.find((r) => r.kind === 'application')?.file ?? null
+  const bankStatements = review.filter((r) => r.kind === 'bank_statement').map((r) => r.file)
+  return { application, bankStatements }
 }
 
 export function classifyPdfFiles(files: File[]): {
@@ -53,10 +62,8 @@ export function classifyPdfFiles(files: File[]): {
   bankStatements: File[]
   review: ClassifiedPdf[]
 } {
-  const review: ClassifiedPdf[] = files.map((file) => ({
-    file,
-    kind: classifyPdfFileName(file.name),
-  }))
+  const extracted = files.map((file) => ({ file, sourcePath: file.name }))
+  const review = classifyExtractedPdfs(extracted)
 
   let application = review.find((r) => r.kind === 'application')?.file ?? null
   const bankStatements = review.filter((r) => r.kind === 'bank_statement').map((r) => r.file)

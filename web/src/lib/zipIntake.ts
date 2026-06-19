@@ -1,5 +1,11 @@
 import JSZip from 'jszip'
 
+export type ExtractedPdf = {
+  file: File
+  /** Full path inside the ZIP, or bare filename for standalone PDFs */
+  sourcePath: string
+}
+
 function isPdfName(name: string): boolean {
   return name.toLowerCase().endsWith('.pdf')
 }
@@ -13,28 +19,31 @@ function isMacMetadata(path: string): boolean {
   return parts.some((p) => p === '__MACOSX' || p.startsWith('._'))
 }
 
-async function pdfsFromZip(file: File): Promise<File[]> {
+async function pdfsFromZip(file: File): Promise<ExtractedPdf[]> {
   const zip = await JSZip.loadAsync(file)
-  const pdfs: File[] = []
+  const pdfs: ExtractedPdf[] = []
 
   for (const [path, entry] of Object.entries(zip.files)) {
     if (entry.dir || !isPdfName(path) || isMacMetadata(path)) continue
     const blob = await entry.async('blob')
     const name = path.split('/').pop() ?? path
-    pdfs.push(new File([blob], name, { type: 'application/pdf' }))
+    pdfs.push({
+      file: new File([blob], name, { type: 'application/pdf' }),
+      sourcePath: path.replace(/\\/g, '/'),
+    })
   }
 
   return pdfs
 }
 
-export async function extractPdfsFromUploads(files: FileList | File[]): Promise<File[]> {
+export async function extractPdfsFromUploads(files: FileList | File[]): Promise<ExtractedPdf[]> {
   const incoming = Array.from(files)
-  const pdfs: File[] = []
+  const pdfs: ExtractedPdf[] = []
 
   for (const file of incoming) {
     const lower = file.name.toLowerCase()
     if (lower.endsWith('.pdf') || file.type === 'application/pdf') {
-      pdfs.push(file)
+      pdfs.push({ file, sourcePath: file.name })
       continue
     }
     if (isZipName(lower) || file.type === 'application/zip' || file.type === 'application/x-zip-compressed') {

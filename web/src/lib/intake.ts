@@ -95,3 +95,21 @@ export async function createIntakeFromUploads(files: IntakeFiles): Promise<strin
 
   return deal.id
 }
+
+const BATCH_SIZE = 5
+
+async function runInBatches<T, R>(items: T[], batchSize: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = []
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize)
+    const batchResults = await Promise.all(batch.map(fn))
+    results.push(...batchResults)
+  }
+  return results
+}
+
+/** Create one deal per merchant package (parallelized in small batches). */
+export async function createMultipleIntakesFromUploads(packages: IntakeFiles[]): Promise<string[]> {
+  if (!packages.length) return []
+  return runInBatches(packages, BATCH_SIZE, (pkg) => createIntakeFromUploads(pkg))
+}
