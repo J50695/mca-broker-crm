@@ -29,17 +29,20 @@
   html {
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    height: 100%;
+    overflow: hidden;
   }
 
   body {
     margin: 0;
-    min-height: 100vh;
+    height: 100%;
+    overflow: hidden;
     background: var(--color-office-bg);
     color: var(--color-ink);
   }
 
   #root {
-    min-height: 100vh;
+    height: 100vh;
   }
 }
 

@@ -75,7 +75,7 @@ type SidebarProps = {
 
 export default function Sidebar({ email, onSignOut }: SidebarProps) {
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-office-border bg-office-surface">
+    <aside className="flex h-full w-60 shrink-0 flex-col overflow-hidden border-r border-office-border bg-office-surface">
       <div className="flex h-14 items-center gap-2.5 border-b border-office-border px-4">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">
           M

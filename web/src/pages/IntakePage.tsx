@@ -158,7 +158,7 @@ export default function IntakePage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
+    <div className="mx-auto min-h-0 max-w-4xl flex-1 space-y-5 overflow-y-auto">
       <header className="rounded-2xl border border-office-border bg-office-surface px-6 py-5 shadow-office">
         <h1 className="text-xl font-semibold text-ink">New intake</h1>
         <p className="mt-1 text-sm text-ink-secondary">

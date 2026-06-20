@@ -123,7 +123,7 @@ export default function SubmissionsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
       <header className="rounded-2xl border border-office-border bg-office-surface px-6 py-5 shadow-office">
         <h1 className="text-xl font-semibold text-ink">Submissions</h1>
         <p className="mt-1 max-w-2xl text-sm text-ink-secondary">

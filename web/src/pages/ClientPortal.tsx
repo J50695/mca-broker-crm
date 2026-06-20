@@ -152,7 +152,7 @@ export default function ClientPortal() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
       <Link to="/" className="inline-flex text-sm font-medium text-accent hover:underline">
         ← Back to pipeline
       </Link>

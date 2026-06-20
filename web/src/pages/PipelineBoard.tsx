@@ -169,15 +169,15 @@ export default function PipelineBoard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24">
+      <div className="flex min-h-0 flex-1 items-center justify-center">
         <p className="text-sm text-ink-muted">Loading pipeline…</p>
       </div>
     )
   }
 
   return (
-    <div>
-      <div className="mb-6 rounded-2xl border border-office-border bg-office-surface px-6 py-5 shadow-office">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-6 shrink-0 rounded-2xl border border-office-border bg-office-surface px-6 py-5 shadow-office">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold text-ink">Pipeline</h1>
@@ -202,10 +202,10 @@ export default function PipelineBoard() {
       </div>
 
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-6">
+        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto pb-1">
           {PIPELINE_COLUMNS.map((col) => (
-            <div key={col.id} className="flex w-[272px] shrink-0 flex-col">
-              <div className="mb-2 rounded-t-xl border border-b-0 border-office-border bg-office-raised px-3.5 py-3">
+            <div key={col.id} className="flex h-full min-h-0 w-[272px] shrink-0 flex-col">
+              <div className="mb-2 shrink-0 rounded-t-xl border border-b-0 border-office-border bg-office-raised px-3.5 py-3">
                 <div className="flex items-start justify-between gap-2">
                   <h2 className="text-[13px] font-semibold text-ink leading-snug">{col.title}</h2>
                   <span className="shrink-0 rounded-full bg-office-surface border border-office-border px-2 py-0.5 text-[11px] font-medium text-ink-secondary">
@@ -220,7 +220,7 @@ export default function PipelineBoard() {
                     ref={provided.innerRef}
                     {...provided.droppableProps}
                     className={clsx(
-                      'min-h-[420px] flex-1 rounded-b-xl border border-office-border p-2 space-y-2 transition-colors',
+                      'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-b-xl border border-office-border p-2 transition-colors',
                       snapshot.isDraggingOver ? 'bg-accent-soft/50 border-accent/30' : 'bg-office-raised/60',
                     )}
                   >

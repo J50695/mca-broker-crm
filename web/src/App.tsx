@@ -12,11 +12,11 @@ import PlaceholderPage from './pages/PlaceholderPage'
 
 function AppShell({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
   return (
-    <div className="flex min-h-screen bg-office-bg">
+    <div className="flex h-screen overflow-hidden bg-office-bg">
       <Sidebar email={session.user.email ?? ''} onSignOut={onSignOut} />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <main className="flex-1 overflow-auto p-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
           <Routes>
             <Route path="/" element={<PipelineBoard />} />
             <Route path="/clients/:dealId" element={<ClientPortal />} />
